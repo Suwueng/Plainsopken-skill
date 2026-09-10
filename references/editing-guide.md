@@ -66,7 +66,7 @@ def deduplicate(items: list[str]) -> list[str]:
 
 [场景样本原文](https://github.com/MrGeDiao/shuorenhua/blob/bddfc58eaaf3b98a7a0a0b558c934dd9b7dcce7e/evals/real-samples.md)共 20 条：保留 RS-07/14；提炼 RS-06/08/11/13/19/20；其余 12 条推荐稿不安装。[分层文件](https://github.com/MrGeDiao/shuorenhua/blob/bddfc58eaaf3b98a7a0a0b558c934dd9b7dcce7e/evals/benchmark-tiers.md)与 [SF-40 输入](https://github.com/MrGeDiao/shuorenhua/blob/bddfc58eaaf3b98a7a0a0b558c934dd9b7dcce7e/evals/benchmark.md#L309)仅作为提炼来源；分层文件所说“手册只约束同段”的理由已滞后于同版手册，未复制。`evals/`、评测脚本、历史结果和 HUMAN 对照正文均不安装，也不是在线必读依赖。没有沿用上游分数宣称本版本通过评测。
 
-后续通用优化、评测、版本和词库维护由个人技能管理项目或专门的 skill 项目承担；具体开发仓库尚未指定。本安装目录是当前完整交接成品，调用它的业务仓库不承担同步或开发职责。接手时将这份成品及许可一并纳入选定的维护来源，不用上游原版覆盖本次修复。词库不能与其他词表混合后以新词库发布；用语建议留在独立说明中。
+2026-09-10 起，后续通用优化、评测、版本和词库维护由独立个人项目 shuorenhua 承担。全局安装目录接收测试通过后的运行副本，调用它的业务仓库不承担同步或开发职责。项目已将本次成品及许可纳入版本管理；上游改动经人工审阅后按需移植，不用上游原版覆盖本次修复。词库不能与其他词表混合后以新词库发布；用语建议留在独立说明中。
 
 验证分开记录：目录与元数据校验只证明格式，宿主发现只证明可加载，具体改写需要对照输入核对含义。没有运行某项模型评测就不报告其通过率。该 skill 没有必需的第三方 Python 包、评测 CLI 或运行脚本。
 
