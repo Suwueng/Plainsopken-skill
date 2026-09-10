@@ -20,8 +20,8 @@ class InstallationTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.source = self.root / "source"
         self.source.mkdir()
-        self.destination = self.root / "codex" / "skills" / "shuorenhua"
-        (self.source / "SKILL.md").write_text("---\nname: shuorenhua\ndescription: Test skill\n---\n[Guide](references/guide.md)\n")
+        self.destination = self.root / "codex" / "skills" / "plainspoken"
+        (self.source / "SKILL.md").write_text("---\nname: plainspoken\ndescription: Test skill\n---\n[Guide](references/guide.md)\n")
         (self.source / "LICENSE").write_text("License fixture")
         (self.source / "agents").mkdir()
         (self.source / "agents" / "openai.yaml").write_text("interface: {}\n")

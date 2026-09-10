@@ -1,4 +1,4 @@
-# 说人话：个人维护版
+# Plainspoken
 
 中文与英文文本的改写和审阅技能，清理模板表达，同时保留事实、术语、范围与责任主体。
 
@@ -25,7 +25,7 @@ python3 -m unittest discover -s tests -v
 
 每次规则修改先从真实问题提炼一个用例：保留输入，写清必须保留的信息、允许的修改范围和不允许的结果，然后对比改动前后输出。初始用例见 [evals/cases.md](evals/cases.md)。
 
-测试会话应明确读取这个工作目录下的 `SKILL.md` 及相关参考文件，并核对实际读取路径。根目录技能源码没有注册为第二份全局技能，不能只说 `$shuorenhua` 就假定测试的是开发版。
+测试会话应明确读取这个工作目录下的 `SKILL.md` 及相关参考文件，并核对实际读取路径。根目录技能源码没有注册为第二份全局技能，不能只说 `$plainspoken` 就假定测试的是开发版。
 
 用例输出和评审记录放在 `work/`，记录技能 commit、模型、日期、原始输入及实际输出。评审先检查事实和范围，再评价风格；不要求和一份推荐稿逐字一致。评审用的预期条件不要提前提供给被测模型。
 
@@ -37,9 +37,11 @@ python3 -m unittest discover -s tests -v
 python3 scripts/manage.py install
 ```
 
-默认安装到 `$CODEX_HOME/skills/shuorenhua`；未设置 CODEX_HOME 时使用当前用户的 `.codex/skills/shuorenhua`。
+默认安装到 `$CODEX_HOME/skills/plainspoken`；未设置 CODEX_HOME 时使用当前用户的 `.codex/skills/plainspoken`。
 
-安装要求 Git 工作区干净，导出上述运行内容并写入 `.installation.json`，记录源 commit 和文件校验值。旧安装移动到技能目录之外的 `skill-backups/shuorenhua/`，命令会打印完整备份路径。安装不依赖 GitHub，也不会读取或修改上游仓库。
+首次从旧名切换：2026-09-10 的项目更名未同步全局安装，旧版仍位于 `~/.codex/skills/shuorenhua`。首次正式同步时，先将旧目录完整备份到技能扫描目录之外，再安装 Plainspoken，避免两个版本同时被调用。安装工具不会自动迁移旧名目录；如需恢复旧名版本，应将其备份移回原目录。下面的回滚命令用于 Plainspoken 自身的版本切换。
+
+安装要求 Git 工作区干净，导出上述运行内容并写入 `.installation.json`，记录源 commit 和文件校验值。旧安装移动到技能目录之外的 `skill-backups/plainspoken/`，命令会打印完整备份路径。安装不依赖 GitHub，也不会读取或修改上游仓库。
 
 失败时工具尝试恢复旧目录。需要主动回滚时，把以下 BACKUP_PATH 替换为安装时打印的完整路径：
 

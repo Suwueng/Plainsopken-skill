@@ -38,8 +38,8 @@ def check(source):
     files = runtime_files(source)
     text = (source / "SKILL.md").read_text()
     header = re.match(r"\A---\n(.*?)\n---(?:\n|$)", text, re.S)
-    if not header or not re.search(r"^name: shuorenhua\s*$", header[1], re.M):
-        raise ValueError("SKILL.md 缺少有效的 shuorenhua 名称")
+    if not header or not re.search(r"^name: plainspoken\s*$", header[1], re.M):
+        raise ValueError("SKILL.md 缺少有效的 plainspoken 名称")
     if not re.search(r"^description: \S.*$", header[1], re.M):
         raise ValueError("SKILL.md 缺少 description")
     for file in files:
@@ -115,7 +115,7 @@ def main():
     parser.add_argument("action", choices=("check", "install", "rollback"))
     parser.add_argument("backup", nargs="?", type=Path)
     codex_root = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
-    parser.add_argument("--dest", type=Path, default=codex_root / "skills" / "shuorenhua")
+    parser.add_argument("--dest", type=Path, default=codex_root / "skills" / "plainspoken")
     args = parser.parse_args()
     if (args.action == "rollback") != (args.backup is not None):
         parser.error("只有 rollback 需要且必须提供备份路径")
