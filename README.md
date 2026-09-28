@@ -4,6 +4,8 @@
 
 项目由 shuorenhua 的一个本地修订版独立维护，上游只供人工审阅和选择性移植，不自动合并。来源与基线见 [UPSTREAM.md](UPSTREAM.md)。
 
+防御性表述规则借鉴并改编自 Kiterlin 的 [anti-defensive-writing](https://github.com/Kiterlin/anti-defensive-writing)：按句子功能区分多余辩解与必要限定，清理冗余包装，同时保留证据强度、适用范围和责任说明。改编已纳入 Plainspoken 现有的保真、编辑范围与回读规则。
+
 本项目现阶段由 Peng Cheng 与 Codex 协作开发。维护者公开身份为 Peng Cheng <chengpengsmc@qq.com>。此声明保留 MrGeDiao 的上游作者署名，以及所引用材料各自的作者归属与使用约定。
 
 ## 开发入口
@@ -81,7 +83,7 @@ python3 scripts/manage.py rollback BACKUP_PATH
 
 ## 许可与资料来源
 
-源自 MrGeDiao/shuorenhua 的通用技能材料保留 [MIT 许可](LICENSE) 与原作者署名。Peng Cheng 有权授权的新增和修改贡献也按 MIT 提供；Codex 协作说明用于记录开发过程。第三方材料的作者、出处与许可范围见随技能分发的 [THIRD_PARTY_NOTICES.md](skills/plainspoken/THIRD_PARTY_NOTICES.md)。
+源自 MrGeDiao/shuorenhua 的通用技能材料，以及改编自 Kiterlin/anti-defensive-writing 的防御性表述规则，均保留 [MIT 许可](LICENSE) 与原作者署名。Peng Cheng 有权授权的新增和修改贡献也按 MIT 提供；Codex 协作说明用于记录开发过程。第三方材料的作者、出处、固定版本与许可范围见随技能分发的 [THIRD_PARTY_NOTICES.md](skills/plainspoken/THIRD_PARTY_NOTICES.md)。
 
 修改根 `LICENSE` 后，显式同步并检查：
 
