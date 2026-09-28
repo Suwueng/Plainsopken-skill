@@ -15,14 +15,30 @@ from urllib.parse import unquote, urlsplit
 
 
 ROOT = Path(__file__).resolve().parents[1]
+SKILL_DIR = Path("skills/plainspoken")
 RUNTIME = ("SKILL.md", "LICENSE", "agents", "references")
+NOTICE = "THIRD_PARTY_NOTICES.md"
 RECORD = ".installation.json"
 
 
+def skill_root(repository):
+    path = repository
+    for part in SKILL_DIR.parts:
+        path = path / part
+        if path.is_symlink():
+            raise ValueError(f"技能源码路径不接受符号链接：{path}")
+    return path
+
+
 def runtime_files(source):
-    files = []
-    for name in RUNTIME:
+    """返回安装包相对路径到文件的映射，兼容未带第三方声明的旧备份。"""
+    if source.is_symlink():
+        raise ValueError(f"运行内容不接受符号链接：{source}")
+    files = {}
+    for name in (*RUNTIME, NOTICE):
         path = source / name
+        if name == NOTICE and not path.exists() and not path.is_symlink():
+            continue
         if not path.exists():
             raise ValueError(f"缺少运行内容：{path}")
         entries = [path, *path.rglob("*")] if path.is_dir() else [path]
@@ -30,8 +46,9 @@ def runtime_files(source):
             if entry.is_symlink():
                 raise ValueError(f"运行内容不接受符号链接：{entry}")
             if entry.is_file():
-                files.append(entry)
-    return sorted(files)
+                relative = Path(name) / entry.relative_to(path) if path.is_dir() else Path(name)
+                files[str(relative)] = entry
+    return dict(sorted(files.items()))
 
 
 def check(source):
@@ -42,16 +59,40 @@ def check(source):
         raise ValueError("SKILL.md 缺少有效的 plainspoken 名称")
     if not re.search(r"^description: \S.*$", header[1], re.M):
         raise ValueError("SKILL.md 缺少 description")
-    for file in files:
+    targets = {(source / relative).resolve() for relative in files}
+    for relative, file in files.items():
         if file.suffix != ".md":
             continue
         for link in re.findall(r"\]\(([^\s)]+)\)", file.read_text()):
             url = urlsplit(link.strip("<>"))
             if url.scheme or url.netloc or not url.path:
                 continue
-            target = (file.parent / unquote(url.path)).resolve()
-            if not target.is_relative_to(source.resolve()) or not target.exists():
-                raise ValueError(f"无效本地链接：{file.relative_to(source)} -> {link}")
+            target = (source / relative).parent / unquote(url.path)
+            target = target.resolve()
+            if not target.is_relative_to(source.resolve()) or not any(p.is_relative_to(target) for p in targets):
+                raise ValueError(f"无效本地链接：{relative} -> {link}")
+    return files
+
+
+def sync_license(repository):
+    source, target = repository / "LICENSE", skill_root(repository) / "LICENSE"
+    if source.is_symlink() or target.is_symlink():
+        raise ValueError("许可文件不接受符号链接")
+    shutil.copyfile(source, target)
+
+
+def check_repository(repository):
+    source = skill_root(repository)
+    master = repository / "LICENSE"
+    if master.is_symlink():
+        raise ValueError("许可文件不接受符号链接")
+    files = check(source)
+    if master.read_bytes() != files["LICENSE"].read_bytes():
+        raise ValueError("许可副本未同步；请运行 python3 scripts/manage.py sync-license")
+    if NOTICE not in files:
+        raise ValueError(f"缺少运行内容：{NOTICE}")
+    if (source / "references/astrodict").exists():
+        raise ValueError("当前技能不附带外部词库，请将其保留在仓库外")
     return files
 
 
@@ -71,8 +112,8 @@ def install(source, destination, commit=None):
     with tempfile.TemporaryDirectory(prefix=".stage-", dir=backup_root) as temporary:
         stage = Path(temporary) / "package"
         stage.mkdir()
-        for file in files:
-            target = stage / file.relative_to(source)
+        for relative, file in files.items():
+            target = stage / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(file, target)
         if (source / RECORD).is_file() and commit is None:
@@ -82,7 +123,7 @@ def install(source, destination, commit=None):
                 "source_commit": commit,
                 "source_path": str(src),
                 "installed_at": datetime.now(timezone.utc).isoformat(),
-                "sha256": {str(f.relative_to(source)): hashlib.sha256(f.read_bytes()).hexdigest() for f in files},
+                "sha256": {relative: hashlib.sha256(file.read_bytes()).hexdigest() for relative, file in files.items()},
             }
             (stage / RECORD).write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n")
         check(stage)
@@ -104,15 +145,17 @@ def committed_source(source):
         return subprocess.check_output(["git", "-C", str(source), *args], text=True).strip()
     if git("status", "--porcelain", "--untracked-files=all"):
         raise ValueError("工作区有未提交改动，请先完成验证并提交，再安装")
-    tracked = set(git("ls-files", "-z", "--", *RUNTIME).split("\0")) - {""}
-    if tracked != {str(f.relative_to(source)) for f in runtime_files(source)}:
+    files = check_repository(source)
+    paths = ["LICENSE", *(str(SKILL_DIR / name) for name in (*RUNTIME, NOTICE))]
+    tracked = set(git("ls-files", "-z", "--", *paths).split("\0")) - {""}
+    if tracked != {"LICENSE", *(str(f.relative_to(source)) for f in files.values())}:
         raise ValueError("运行目录存在未纳入 Git 的文件，请清理后再安装")
     return git("rev-parse", "HEAD")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("check", "install", "rollback"))
+    parser.add_argument("action", choices=("check", "sync-license", "install", "rollback"))
     parser.add_argument("backup", nargs="?", type=Path)
     codex_root = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
     parser.add_argument("--dest", type=Path, default=codex_root / "skills" / "plainspoken")
@@ -121,11 +164,17 @@ def main():
         parser.error("只有 rollback 需要且必须提供备份路径")
     try:
         if args.action == "check":
-            print(f"静态检查通过：{len(check(ROOT))} 个运行文件；未执行模型评测")
+            print(f"静态检查通过：{len(check_repository(ROOT))} 个运行文件；未执行模型评测")
             return
-        source = args.backup.expanduser().absolute() if args.backup else ROOT
+        if args.action == "sync-license":
+            sync_license(ROOT)
+            print("已从根 LICENSE 同步技能许可副本；未安装技能")
+            return
+        source = args.backup.expanduser().absolute() if args.backup else skill_root(ROOT)
         commit = committed_source(ROOT) if args.action == "install" else None
         destination = args.dest.expanduser().absolute()
+        if args.action == "install" and destination.resolve().is_relative_to(ROOT):
+            raise ValueError("安装目标不能位于开发仓库内")
         backup = install(source, destination, commit)
         print(f"已安装：{destination}")
         if backup:

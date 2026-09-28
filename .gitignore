@@ -5,3 +5,7 @@ __pycache__/
 .env
 .env.*
 !.env.example
+.installation.json
+*.pem
+*.key
+/dist/

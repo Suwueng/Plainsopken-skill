@@ -54,9 +54,9 @@ def deduplicate(items: list[str]) -> list[str]:
 
 ## 来源与维护交接
 
-基于 MrGeDiao 的 [shuorenhua 固定版本](https://github.com/MrGeDiao/shuorenhua/tree/bddfc58eaaf3b98a7a0a0b558c934dd9b7dcce7e)，来源 commit 为 `bddfc58eaaf3b98a7a0a0b558c934dd9b7dcce7e`。通用材料保留 [原 MIT 许可](../LICENSE)，Copyright (c) 2026 MrGeDiao。天文词库按自己的 [使用说明](./astrodict/readme.txt) 管理，不改授为 MIT。
+基于 MrGeDiao 的 [shuorenhua 固定版本](https://github.com/MrGeDiao/shuorenhua/tree/bddfc58eaaf3b98a7a0a0b558c934dd9b7dcce7e)，来源 commit 为 `bddfc58eaaf3b98a7a0a0b558c934dd9b7dcce7e`。通用材料保留 [MIT 许可](../LICENSE)和上游 Copyright (c) 2026 MrGeDiao 署名。外部天文词库按自己的[开放使用约定](https://nadc.china-vo.org/astrodict/article/download)使用，不改授为 MIT；当前包不附带完整词库，见[第三方声明](../THIRD_PARTY_NOTICES.md)。
 
-本安装版本保留原入口、场景分类、编辑范围和 11 份通用参考资料；新增本文件、[术语参考](./astronomy.md)、独立词库文件及 Codex UI 元数据。2026-09-10 的一次性修复包括：
+2026-09-10 的本地安装版保留原入口、场景分类、编辑范围和 11 份通用参考资料；当时新增本文件、[术语参考](./astronomy.md)、独立词库文件及 Codex UI 元数据。该次修复包括：
 
 - 将缺失 eval 的两处入口路由和一处结构引用改为包内参考；移除三处未提供的评测脚本操作说明。
 - 修正 examples、structures、positive-style、scene-packs 等资料中无输入依据的功能、数字、机构、诊断、状态与比较；合成示例中的数字只作编辑材料，不能当成实际结果。
@@ -66,7 +66,7 @@ def deduplicate(items: list[str]) -> list[str]:
 
 [场景样本原文](https://github.com/MrGeDiao/shuorenhua/blob/bddfc58eaaf3b98a7a0a0b558c934dd9b7dcce7e/evals/real-samples.md)共 20 条：保留 RS-07/14；提炼 RS-06/08/11/13/19/20；其余 12 条推荐稿不安装。[分层文件](https://github.com/MrGeDiao/shuorenhua/blob/bddfc58eaaf3b98a7a0a0b558c934dd9b7dcce7e/evals/benchmark-tiers.md)与 [SF-40 输入](https://github.com/MrGeDiao/shuorenhua/blob/bddfc58eaaf3b98a7a0a0b558c934dd9b7dcce7e/evals/benchmark.md#L309)仅作为提炼来源；分层文件所说“手册只约束同段”的理由已滞后于同版手册，未复制。`evals/`、评测脚本、历史结果和 HUMAN 对照正文均不安装，也不是在线必读依赖。没有沿用上游分数宣称本版本通过评测。
 
-2026-09-10 起，后续通用优化、评测、版本和词库维护由独立个人项目 Plainspoken承担。全局安装目录接收测试通过后的运行副本，调用它的业务仓库不承担同步或开发职责。项目已将本次成品及许可纳入版本管理；上游改动经人工审阅后按需移植，不用上游原版覆盖本次修复。词库不能与其他词表混合后以新词库发布；用语建议留在独立说明中。
+2026-09-10 起，后续通用优化、评测、版本和术语参考维护由独立个人项目 Plainspoken 承担。全局安装目录接收测试通过后的运行副本，调用它的业务仓库不承担同步或开发职责。项目已将成品及许可纳入版本管理；上游改动经人工审阅后按需移植，不用上游原版覆盖本次修复。2026-09-14 起，完整天文词库改为可选外部资料，不随当前技能包分发；用语建议仍留在独立说明中。
 
 验证分开记录：目录与元数据校验只证明格式，宿主发现只证明可加载，具体改写需要对照输入核对含义。没有运行某项模型评测就不报告其通过率。该 skill 没有必需的第三方 Python 包、评测 CLI 或运行脚本。
 
