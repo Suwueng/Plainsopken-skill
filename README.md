@@ -29,7 +29,7 @@
 在 Codex 中安装需要 Python 3.10+ 和 Git，无必需的第三方 Python 包。先获取仓库，在干净提交上检查并安装：
 
 ```sh
-git clone https://github.com/Suwueng/Plainsopken-skill.git plainspoken
+git clone https://github.com/Suwueng/Plainspoken-skill.git plainspoken
 cd plainspoken
 python3 scripts/harness.py check
 python3 scripts/manage.py install
