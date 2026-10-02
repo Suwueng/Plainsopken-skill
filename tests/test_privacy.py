@@ -224,7 +224,7 @@ class PrivacyTests(unittest.TestCase):
         self.assertNotIn(value, json.dumps(report))
 
     @patch.object(privacy, "LICENSED_SHA256", hashlib.sha256(LICENSED_DATA).hexdigest())
-    def test_licensed_data_migration_preserves_exact_exception_in_each_scope(self):
+    def test_licensed_data_exception_is_only_for_historical_review(self):
         folder = self.root / "work"
         folder.mkdir()
         (folder / "private-patterns.txt").write_text("astronomy\n")
@@ -237,9 +237,25 @@ class PrivacyTests(unittest.TestCase):
                 if previous is not None:
                     previous.unlink()
                 self.commit()
+                self.assertFalse(privacy.scan(self.root, "history", allow_legacy_data=True)["findings"])
                 for scope in ("worktree", "staged", "history"):
-                    self.assertFalse(privacy.scan(self.root, scope)["findings"], scope)
+                    self.assertIn("external-data-in-candidate", self.rules(privacy.scan(self.root, scope)))
                 previous = target
+
+    def test_legacy_exception_cannot_be_used_on_current_candidates(self):
+        for scope in ("worktree", "staged"):
+            with self.assertRaises(ValueError):
+                privacy.scan(self.root, scope, allow_legacy_data=True)
+
+    def test_external_dictionary_readme_is_not_a_publication_candidate(self):
+        for path in ("references/astrodict/readme.txt", "skills/plainspoken/references/astrodict/readme.txt"):
+            target = self.root / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("Synthetic external resource notice")
+        self.git("add", "-A")
+        for scope in ("worktree", "staged"):
+            self.assertEqual(sum(x["rule"] == "external-data-in-candidate"
+                                 for x in privacy.scan(self.root, scope)["findings"]), 2)
 
     @patch.object(privacy, "LICENSED_SHA256", hashlib.sha256(LICENSED_DATA).hexdigest())
     def test_licensed_data_exception_cannot_hide_modified_content(self):
@@ -253,6 +269,8 @@ class PrivacyTests(unittest.TestCase):
                     findings = privacy.scan(self.root, scope)["findings"]
                     rules = {item["rule"] for item in findings if item["location"].endswith(":" + path)}
                     self.assertTrue({"licensed-data-changed", "email"}.issubset(rules), scope)
+                report = privacy.scan(self.root, "history", allow_legacy_data=True)
+                self.assertTrue({"licensed-data-changed", "email"}.issubset(self.rules(report)))
 
     @patch.object(privacy, "LICENSED_SHA256", hashlib.sha256(LICENSED_DATA).hexdigest())
     def test_licensed_data_at_other_path_still_uses_content_rules(self):

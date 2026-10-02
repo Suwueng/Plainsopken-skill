@@ -146,6 +146,33 @@ def prepare(source, run, case_ids=None):
     return manifest
 
 
+def completed_case_records(run, paths, manifest, references):
+    if not isinstance(paths, list) or not paths:
+        return False
+    complete = True
+    for relative in paths:
+        if not nonempty(relative) or Path(relative).is_absolute() or ".." in Path(relative).parts:
+            raise ValueError("逐例执行记录路径必须是当前运行目录内的相对路径")
+        path = run / relative
+        if not path.resolve().is_relative_to(run.resolve()):
+            raise ValueError("逐例执行记录路径不能越出当前运行目录")
+        if not path.is_file():
+            complete = False
+            continue
+        record = read_json(path)
+        if not isinstance(record, dict):
+            complete = False
+            continue
+        used = record.get("references_read")
+        if (record.get("skill_path") != manifest["skill_path"]
+                or record.get("completion_status") != "completed"
+                or not isinstance(used, list)
+                or any(not isinstance(ref, str) or ref not in manifest["runtime_sha256"]
+                       or ref not in references for ref in used)):
+            complete = False
+    return complete
+
+
 def report(run):
     run = run.absolute()
     if run.is_symlink() or any(path.is_symlink() for path in run.rglob("*")):
@@ -170,16 +197,30 @@ def report(run):
     executed = executed and isinstance(references, list) and all(
         isinstance(ref, str) and ref in manifest["runtime_sha256"] for ref in references
     )
+    declared = "per_case_execution" in execution
+    per_case = execution.get("per_case_execution")
+    if declared and (not isinstance(per_case, dict) or set(per_case) - set(manifest["cases"])):
+        raise ValueError("逐例执行记录必须是当前用例 id 到记录路径列表的映射")
     results = []
     for case in cases:
         identifier = case["id"]
         output_path = run / "outputs" / f"{identifier}.txt"
         result = {"id": identifier, "status": "not_run", "automatic_failures": [], "criteria": {}}
         results.append(result)
-        if not output_path.is_file() or not output_path.read_text(encoding="utf-8").strip():
+        if not output_path.is_file():
             continue
+        case_executed = executed and (not declared or completed_case_records(
+            run, per_case.get(identifier), manifest, references
+        ))
         output = output_path.read_text(encoding="utf-8")
         result["output_sha256"] = digest(output_path.read_bytes())
+        if not output.strip():
+            if case_executed:
+                result["status"] = "fail"
+                result["automatic_failures"].append({"check": "nonempty_output"})
+            else:
+                result["status"] = "pending_execution"
+            continue
         for kind, values in case["checks"].items():
             for value in values:
                 if (kind == "contains" and value not in output) or (kind == "absent" and value in output):
@@ -198,7 +239,7 @@ def report(run):
             result["criteria"][criterion["id"]] = {**criterion, **decision}
         if result["automatic_failures"] or (reviewed and failed):
             result["status"] = "fail"
-        elif not executed:
+        elif not case_executed:
             result["status"] = "pending_execution"
         elif not reviewed:
             result["status"] = "pending_review"

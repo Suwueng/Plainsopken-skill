@@ -98,6 +98,15 @@ def check_repository(repository):
 
 def install(source, destination, commit=None):
     files = check(source)
+    record_path = source / RECORD
+    record = None
+    if commit is None and (record_path.exists() or record_path.is_symlink()):
+        if record_path.is_symlink() or not record_path.is_file():
+            raise ValueError("安装清单必须是普通文件")
+        record = json.loads(record_path.read_text())
+        actual = {relative: hashlib.sha256(file.read_bytes()).hexdigest() for relative, file in files.items()}
+        if not isinstance(record, dict) or record.get("sha256") != actual:
+            raise ValueError("备份内容与安装清单不一致，未修改当前安装")
     if destination.is_symlink():
         raise ValueError("目标是符号链接，请先人工处理，避免覆盖开发源")
     src, dst = source.resolve(), destination.resolve()
@@ -106,6 +115,13 @@ def install(source, destination, commit=None):
     if destination.exists() and not destination.is_dir():
         raise ValueError("安装目标必须是目录")
     backup_root = destination.parent.parent / "skill-backups" / destination.name
+    resolved_backup = backup_root.resolve()
+    if resolved_backup.is_relative_to(dst) or dst.is_relative_to(resolved_backup):
+        raise ValueError("备份目录和安装目标不能重叠")
+    if resolved_backup.is_relative_to(src):
+        raise ValueError("备份目录不能位于安装源内或等于安装源")
+    if resolved_backup.is_relative_to(ROOT) or ROOT.is_relative_to(resolved_backup):
+        raise ValueError("备份目录不能位于开发仓库内，也不能包含开发仓库")
     backup_root.mkdir(parents=True, exist_ok=True)
     destination.parent.mkdir(parents=True, exist_ok=True)
     backup = None
@@ -116,8 +132,8 @@ def install(source, destination, commit=None):
             target = stage / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(file, target)
-        if (source / RECORD).is_file() and commit is None:
-            shutil.copy2(source / RECORD, stage / RECORD)
+        if record is not None:
+            shutil.copy2(record_path, stage / RECORD)
         else:
             record = {
                 "source_commit": commit,
@@ -173,8 +189,8 @@ def main():
         source = args.backup.expanduser().absolute() if args.backup else skill_root(ROOT)
         commit = committed_source(ROOT) if args.action == "install" else None
         destination = args.dest.expanduser().absolute()
-        if args.action == "install" and destination.resolve().is_relative_to(ROOT):
-            raise ValueError("安装目标不能位于开发仓库内")
+        if destination.resolve().is_relative_to(ROOT) or ROOT.is_relative_to(destination.resolve()):
+            raise ValueError("安装或回滚目标不能位于开发仓库内，也不能包含开发仓库")
         backup = install(source, destination, commit)
         print(f"已安装：{destination}")
         if backup:

@@ -95,8 +95,9 @@ class InstallationTests(unittest.TestCase):
         self.assertEqual((self.destination / "references/astrodict/fixture.txt").read_text(), "Legacy fixture")
 
     def test_update_removes_stale_files_and_rollback_restores_them(self):
+        (self.skill / "references" / "obsolete.md").write_text("Old extra file")
         self.install("first")
-        (self.destination / "references" / "obsolete.md").write_text("Old extra file")
+        (self.skill / "references" / "obsolete.md").unlink()
         (self.skill / "references" / "guide.md").write_text("Updated guide")
         backup = self.install("second")
         self.assertFalse((self.destination / "references" / "obsolete.md").exists())
@@ -107,6 +108,62 @@ class InstallationTests(unittest.TestCase):
         self.assertEqual(json.loads((self.destination / manage.RECORD).read_text())["source_commit"], "first")
         self.assertTrue(current_backup.is_dir())
 
+    def test_changed_backup_record_blocks_restore_without_touching_destination(self):
+        self.install("first")
+        (self.skill / "references/guide.md").write_text("Updated guide")
+        backup = self.install("second")
+        original = {str(p.relative_to(self.destination)): p.read_bytes()
+                    for p in self.destination.rglob("*") if p.is_file()}
+        record = (backup / manage.RECORD).read_bytes()
+        guide = (backup / "references/guide.md").read_bytes()
+        for change in ("modified", "added", "missing", "malformed", "wrong-type", "symlink"):
+            with self.subTest(change=change):
+                record_path = backup / manage.RECORD
+                if record_path.is_symlink():
+                    record_path.unlink()
+                record_path.write_bytes(record)
+                (backup / "references/guide.md").write_bytes(guide)
+                extra = backup / "references/extra.md"
+                extra.unlink(missing_ok=True)
+                if change == "modified":
+                    (backup / "references/guide.md").write_text("Modified backup")
+                elif change == "added":
+                    extra.write_text("Added after installation")
+                elif change == "missing":
+                    (backup / "references/guide.md").unlink()
+                elif change == "malformed":
+                    record_path.write_text("not JSON")
+                elif change == "wrong-type":
+                    record_path.write_text("[]")
+                else:
+                    record_path.unlink()
+                    record_path.symlink_to(self.destination / manage.RECORD)
+                with self.assertRaises(ValueError):
+                    manage.install(backup, self.destination)
+                self.assertEqual(original, {str(p.relative_to(self.destination)): p.read_bytes()
+                                            for p in self.destination.rglob("*") if p.is_file()})
+
+    def test_cli_rollback_cannot_replace_development_tree(self):
+        self.install("first")
+        external_source = self.destination
+        for scope in ("root", "child", "ancestor"):
+            with self.subTest(scope=scope):
+                repository = self.root / scope / "workspace/repository"
+                shutil.copytree(self.source, repository)
+                script = repository / "scripts/manage.py"
+                script.parent.mkdir()
+                shutil.copy2(SCRIPT, script)
+                target = {"root": repository, "child": repository / "docs",
+                          "ancestor": repository.parent}[scope]
+                original = {str(p.relative_to(repository)): p.read_bytes()
+                            for p in repository.rglob("*") if p.is_file()}
+                result = subprocess.run([sys.executable, str(script), "rollback", str(external_source),
+                                         "--dest", str(target)], capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("开发仓库", result.stderr)
+                self.assertEqual(original, {str(p.relative_to(repository)): p.read_bytes()
+                                            for p in repository.rglob("*") if p.is_file()})
+
     def test_invalid_source_leaves_installed_version_untouched(self):
         self.install("first")
         original = (self.destination / "SKILL.md").read_bytes()
@@ -114,6 +171,66 @@ class InstallationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "无效本地链接"):
             self.install()
         self.assertEqual((self.destination / "SKILL.md").read_bytes(), original)
+
+    def test_backup_root_cannot_overlap_destination_before_any_write(self):
+        for scope in ("empty", "existing", "alias"):
+            with self.subTest(scope=scope):
+                base = self.root / scope
+                destination = base / "skill-backups/plainspoken"
+                if scope == "existing":
+                    shutil.copytree(self.skill, destination)
+                elif scope == "alias":
+                    destination = base / "skills/plainspoken"
+                    destination.parent.mkdir(parents=True)
+                    alias = base / "skill-backups/plainspoken"
+                    alias.parent.mkdir()
+                    alias.symlink_to(destination.parent, target_is_directory=True)
+                original = {str(p.relative_to(self.root)): p.read_bytes()
+                            for p in self.root.rglob("*") if p.is_file()}
+                entries = set(self.root.rglob("*"))
+                with self.assertRaisesRegex(ValueError, "备份.*重叠"):
+                    manage.install(self.skill, destination)
+                self.assertEqual(entries, set(self.root.rglob("*")))
+                self.assertEqual(original, {str(p.relative_to(self.root)): p.read_bytes()
+                                            for p in self.root.rglob("*") if p.is_file()})
+
+    def test_backup_root_cannot_be_inside_source_or_equal_source(self):
+        for scope in ("equal", "inside"):
+            with self.subTest(scope=scope):
+                base = self.root / scope
+                source = base / "skill-backups/plainspoken" if scope == "equal" else base / "skill-backups"
+                shutil.copytree(self.skill, source)
+                destination = base / "skills/plainspoken"
+                shutil.copytree(self.skill, destination)
+                original = {str(p.relative_to(base)): p.read_bytes()
+                            for p in base.rglob("*") if p.is_file()}
+                entries = set(base.rglob("*"))
+                with self.assertRaisesRegex(ValueError, "备份.*安装源"):
+                    manage.install(source, destination)
+                self.assertEqual(entries, set(base.rglob("*")))
+                self.assertEqual(original, {str(p.relative_to(base)): p.read_bytes()
+                                            for p in base.rglob("*") if p.is_file()})
+
+    def test_cli_backup_cannot_write_into_development_repository(self):
+        self.install("first")
+        repository = self.root / "isolated/skill-backups"
+        shutil.copytree(self.source, repository)
+        script = repository / "scripts/manage.py"
+        script.parent.mkdir()
+        shutil.copy2(SCRIPT, script)
+        destination = repository.parent / "skills/plainspoken"
+        original = {str(p.relative_to(repository)): p.read_bytes()
+                    for p in repository.rglob("*") if p.is_file()}
+        entries = set(repository.rglob("*"))
+        result = subprocess.run([sys.executable, str(script), "rollback", str(self.destination),
+                                 "--dest", str(destination)], capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("备份", result.stderr)
+        self.assertIn("开发仓库", result.stderr)
+        self.assertFalse(destination.parent.exists())
+        self.assertEqual(entries, set(repository.rglob("*")))
+        self.assertEqual(original, {str(p.relative_to(repository)): p.read_bytes()
+                                    for p in repository.rglob("*") if p.is_file()})
 
     def test_symlinks_and_overlapping_destination_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "不能重叠"):

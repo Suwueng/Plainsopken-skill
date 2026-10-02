@@ -59,6 +59,19 @@ class EvaluationTests(unittest.TestCase):
         }
         (self.run / "reviews/facts.json").write_text(json.dumps(review))
 
+    def declare_case_execution(self):
+        path = self.run / "execution.json"
+        execution = json.loads(path.read_text())
+        execution["per_case_execution"] = {"facts": ["per-case/facts.json"]}
+        path.write_text(json.dumps(execution))
+        record_path = self.run / "per-case/facts.json"
+        record_path.parent.mkdir()
+        record_path.write_text(json.dumps({
+            "skill_path": execution["skill_path"], "references_read": execution["references_read"],
+            "completion_status": "completed", "model": "exact model unknown",
+        }))
+        return record_path
+
     def test_prepare_pins_dirty_runtime_and_hides_rubric_from_prompt(self):
         (self.skill / "references/guide.md").write_text("Changed local rules")
         (self.root / "SKILL.md").write_text("Stale root entry must not be used")
@@ -85,6 +98,38 @@ class EvaluationTests(unittest.TestCase):
         (self.run / "reviews/facts.json").unlink()
         self.assertEqual(harness.report(self.run)["status"], "pending_review")
 
+    def test_executed_blank_output_fails_even_with_positive_review(self):
+        self.case["checks"] = {}
+        (self.root / "evals/cases.json").write_text(json.dumps({"version": 1, "cases": [self.case]}))
+        self.prepare()
+        for output in ("", " \n\t"):
+            with self.subTest(output=repr(output)):
+                self.complete(output)
+                result = harness.report(self.run)
+                self.assertEqual(result["status"], "fail")
+                case = result["cases"][0]
+                self.assertEqual(case["status"], "fail")
+                self.assertEqual(case["output_sha256"], harness.digest(output.encode()))
+                self.assertEqual(case["automatic_failures"], [{"check": "nonempty_output"}])
+                self.assertEqual((self.run / "outputs/facts.txt").read_text(), output)
+
+    def test_blank_file_without_valid_execution_is_pending(self):
+        self.prepare()
+        (self.run / "outputs/facts.txt").write_text("")
+        self.assertEqual(harness.report(self.run)["status"], "pending_execution")
+        self.complete("")
+        path = self.run / "execution.json"
+        execution = json.loads(path.read_text())
+        execution["skill_path"] = str(self.skill / "SKILL.md")
+        path.write_text(json.dumps(execution))
+        self.assertEqual(harness.report(self.run)["status"], "pending_execution")
+
+    def test_missing_output_stays_not_run_despite_run_execution_metadata(self):
+        self.prepare()
+        self.complete()
+        (self.run / "outputs/facts.txt").unlink()
+        self.assertEqual(harness.report(self.run)["status"], "not_run")
+
     def test_review_cannot_hide_lost_literal_or_new_claim(self):
         self.prepare()
         self.complete("Latency is fast for all users.")
@@ -110,6 +155,102 @@ class EvaluationTests(unittest.TestCase):
         execution = json.loads((self.run / "execution.json").read_text())
         execution["skill_path"] = str(self.skill / "SKILL.md")
         (self.run / "execution.json").write_text(json.dumps(execution))
+        self.assertEqual(harness.report(self.run)["status"], "pending_execution")
+
+    def test_complete_declared_records_can_pass_including_multiple_rounds(self):
+        self.prepare()
+        self.complete()
+        record_path = self.declare_case_execution()
+        self.assertEqual(harness.report(self.run)["status"], "pass")
+        second = record_path.with_name("second.json")
+        second.write_bytes(record_path.read_bytes())
+        path = self.run / "execution.json"
+        execution = json.loads(path.read_text())
+        execution["per_case_execution"]["facts"].append("per-case/second.json")
+        path.write_text(json.dumps(execution))
+        self.assertEqual(harness.report(self.run)["status"], "pass")
+        record = json.loads(second.read_text())
+        record["completion_status"] = "failed"
+        second.write_text(json.dumps(record))
+        self.assertEqual(harness.report(self.run)["status"], "pending_execution")
+
+    def test_missing_failed_or_wrong_skill_record_cannot_pass(self):
+        self.prepare()
+        self.complete()
+        path = self.declare_case_execution()
+        original = json.loads(path.read_text())
+        for record in (None, {**original, "completion_status": "failed"},
+                       {**original, "skill_path": str(self.skill / "SKILL.md")}):
+            with self.subTest(record=record):
+                if record is None:
+                    path.unlink()
+                else:
+                    path.write_text(json.dumps(record))
+                self.assertEqual(harness.report(self.run)["status"], "pending_execution")
+
+    def test_declared_mapping_requires_known_cases_and_case_coverage(self):
+        self.prepare()
+        self.complete()
+        self.declare_case_execution()
+        path = self.run / "execution.json"
+        execution = json.loads(path.read_text())
+        for mapping in ({}, {"facts": []}):
+            with self.subTest(mapping=mapping):
+                path.write_text(json.dumps({**execution, "per_case_execution": mapping}))
+                self.assertEqual(harness.report(self.run)["status"], "pending_execution")
+        for mapping in (None, [], {"unknown": ["per-case/facts.json"]}):
+            with self.subTest(mapping=mapping):
+                path.write_text(json.dumps({**execution, "per_case_execution": mapping}))
+                with self.assertRaisesRegex(ValueError, "逐例"):
+                    harness.report(self.run)
+
+    def test_declared_record_paths_cannot_escape_the_run(self):
+        self.prepare()
+        self.complete()
+        record_path = self.declare_case_execution()
+        outside = self.run.parent / "outside.json"
+        outside.write_bytes(record_path.read_bytes())
+        path = self.run / "execution.json"
+        execution = json.loads(path.read_text())
+        for relative in ("../outside.json", str(outside), 1):
+            with self.subTest(path=relative):
+                execution["per_case_execution"]["facts"] = [relative]
+                path.write_text(json.dumps(execution))
+                with self.assertRaisesRegex(ValueError, "逐例.*路径"):
+                    harness.report(self.run)
+
+    def test_declared_references_must_belong_to_snapshot_and_run_record(self):
+        self.prepare()
+        self.complete()
+        path = self.declare_case_execution()
+        record = json.loads(path.read_text())
+        for references in (None, ["references/missing.md"]):
+            with self.subTest(references=references):
+                path.write_text(json.dumps({**record, "references_read": references}))
+                self.assertEqual(harness.report(self.run)["status"], "pending_execution")
+        path.write_text(json.dumps(record))
+        run_record = self.run / "execution.json"
+        execution = json.loads(run_record.read_text())
+        execution["references_read"] = []
+        run_record.write_text(json.dumps(execution))
+        self.assertEqual(harness.report(self.run)["status"], "pending_execution")
+
+    def test_nonobject_declared_record_cannot_pass(self):
+        self.prepare()
+        self.complete()
+        path = self.declare_case_execution()
+        for record in (None, [], "completed"):
+            with self.subTest(record=record):
+                path.write_text(json.dumps(record))
+                self.assertEqual(harness.report(self.run)["status"], "pending_execution")
+
+    def test_blank_output_with_failed_case_record_is_pending(self):
+        self.prepare()
+        self.complete("")
+        path = self.declare_case_execution()
+        record = json.loads(path.read_text())
+        record["completion_status"] = "failed"
+        path.write_text(json.dumps(record))
         self.assertEqual(harness.report(self.run)["status"], "pending_execution")
 
     def test_existing_snapshot_report_does_not_depend_on_source_layout(self):

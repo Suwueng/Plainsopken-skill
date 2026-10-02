@@ -91,9 +91,11 @@ def has_symlink(root, path):
     return False
 
 
-def scan(root, scope="worktree"):
+def scan(root, scope="worktree", allow_legacy_data=False):
     if scope not in {"worktree", "staged", "history"}:
         raise ValueError("unknown scope")
+    if allow_legacy_data and scope != "history":
+        raise ValueError("旧词库例外只能用于显式历史复核")
     root = Path(root)
     report = {"scope": scope, "checked": 0, "findings": [], "coverage": "generic_only",
               "notice": "通用规则不能识别全部个人信息；本地禁传字符串未启用。"}
@@ -111,10 +113,14 @@ def scan(root, scope="worktree"):
             add(location, rule)
         if private_path(path):
             add(location, "private-path")
+        if not allow_legacy_data and any(PurePosixPath(path).is_relative_to(prefix)
+                                      for prefix in ("references/astrodict", "skills/plainspoken/references/astrodict")):
+            add(location, "external-data-in-candidate")
         if path in LICENSED_PATHS:
-            if hashlib.sha256(data).hexdigest() == LICENSED_SHA256:
+            if hashlib.sha256(data).hexdigest() == LICENSED_SHA256 and allow_legacy_data:
                 return
-            add(location, "licensed-data-changed")
+            if hashlib.sha256(data).hexdigest() != LICENSED_SHA256:
+                add(location, "licensed-data-changed")
         try:
             text = data.decode("utf-8")
         except UnicodeDecodeError:
@@ -248,8 +254,11 @@ def main():
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--history", action="store_true")
     group.add_argument("--staged", action="store_true")
+    parser.add_argument("--allow-legacy-data", action="store_true", help="仅复核私有旧历史时允许精确词库哈希；不可用于发布检查")
     args = parser.parse_args()
-    report = scan(ROOT, "history" if args.history else "staged" if args.staged else "worktree")
+    if args.allow_legacy_data and not args.history:
+        parser.error("--allow-legacy-data 必须与 --history 同用")
+    report = scan(ROOT, "history" if args.history else "staged" if args.staged else "worktree", args.allow_legacy_data)
     print(json.dumps(report, ensure_ascii=True, indent=2))
     raise SystemExit(1 if report["findings"] else 0)
 
